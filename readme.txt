@@ -1,0 +1,1 @@
+This repo contains some stuff I am toying around with to learn how to use shaders. Right now it contains a voronoi noise fragment shader, a animated worley noise shader, and a perlin noise compute shader.
