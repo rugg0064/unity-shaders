@@ -1,0 +1,93 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+RWTexture2D<float4> ResultTexture;
+float ResultResolution;
+
+Texture2D<float4> NoiseTexture;
+float NoiseResolution;
+
+SamplerState samplerNoiseTexture
+{
+    Filter = MIN_MAG_MIP_POINT;
+    AddressU = Repeat;
+    AddressV = Repeat;
+};
+
+/*
+float sCurve(float t)
+{
+    return t * t * (3 - 2 * t);
+}
+*/
+
+float sCurve(float t)
+{
+    float a0 = 0;
+    float a1 = 1;
+
+    return (a1 - a0) * ((t * (t * 6.0 - 15.0) + 10.0) * t * t * t) + a0;
+}
+
+[numthreads(8,8,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    float distanceBetweenNoise = 1 / NoiseResolution;
+
+    float2 localSpace = id.xy / ResultResolution; // 0.0-1.0 across the whole image
+
+    float2 roundedSpace = floor(localSpace * NoiseResolution) / NoiseResolution; // coordinates in 0-1 of the whole image, of the top-right vector
+
+    float2 localSectorPos = (localSpace - roundedSpace) / distanceBetweenNoise; //0.0-1. within a single grid square on the image
+    
+    float2 topRightPosition    = roundedSpace + float2(0,                    0                   ); // Also 0.0-1.0
+    float2 topLeftPosition     = roundedSpace + float2(distanceBetweenNoise, 0                   );
+    float2 bottomRightPosition = roundedSpace + float2(0,                    distanceBetweenNoise);
+    float2 bottomLeftPosition  = roundedSpace + float2(distanceBetweenNoise, distanceBetweenNoise);
+    
+    float4 topRightVector    = NoiseTexture.SampleLevel(samplerNoiseTexture, topRightPosition, 0);
+    float4 topLeftVector     = NoiseTexture.SampleLevel(samplerNoiseTexture, topLeftPosition, 0);
+    float4 bottomRightVector = NoiseTexture.SampleLevel(samplerNoiseTexture, bottomRightPosition, 0);
+    float4 bottomLeftVector  = NoiseTexture.SampleLevel(samplerNoiseTexture, bottomLeftPosition, 0);
+
+    float2 topRightVector2d    = normalize(float2(topRightVector.xy)    - float2(0.5, 0.5));
+    float2 topLeftVector2d     = normalize(float2(topLeftVector.xy)     - float2(0.5, 0.5));
+    float2 bottomRightVector2d = normalize(float2(bottomRightVector.xy) - float2(0.5, 0.5));
+    float2 bottomLeftVector2d  = normalize(float2(bottomLeftVector.xy)  - float2(0.5, 0.5));
+
+    float2 topRightOffset    = (localSpace - topRightPosition);
+    float2 topLeftOffset     = (localSpace - topLeftPosition);
+    float2 bottomRightOffset = (localSpace - bottomRightPosition);
+    float2 bottomLeftOffset  = (localSpace - bottomLeftPosition);
+
+    float topRightDot    = dot(topRightOffset,    topRightVector2d);
+    float topLeftDot     = dot(topLeftOffset,     topLeftVector2d);
+    float bottomRightDot = dot(bottomRightOffset, bottomRightVector2d);
+    float bottomLeftDot  = dot(bottomLeftOffset,  bottomLeftVector2d);
+    
+    float u = sCurve(localSectorPos.x);
+
+    float a = lerp(topRightDot,    topLeftDot,    u);
+    float b = lerp(bottomRightDot, bottomLeftDot, u);
+    
+    float v = sCurve(localSectorPos.y);
+
+    float f = lerp(a, b, v);
+
+    //ResultTexture[id.xy] = float4(1, 1, 1, 1) * (topRightDot +1);
+    //ResultTexture[id.xy] = float4( (f).xxx * 30, 1.0);
+    /*
+    if (f < 0)
+    {
+        ResultTexture[id.xy] = float4((-1 * f).x * NoiseResolution, 0, 0, 0);
+    }
+    else
+    {
+        ResultTexture[id.xy] = float4(0, (f).x * NoiseResolution, 0, 0);
+    }
+    */
+
+    ResultTexture[id.xy] = float4( (((f * NoiseResolution) + 1)/2).xxx, 0);
+}
